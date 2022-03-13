@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fishing/utils/utils.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:window_size/window_size.dart' as ws;
+import 'package:flutter/services.dart' show rootBundle;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,9 +60,43 @@ class _MyHomePageState extends State<MyHomePage> {
   final _cycleList = <CycleData>[];
   int _cycleNumber = 0;
 
-  void _fishing() {
+  void _fishing() async {
     final args = _getArgs();
     print(args);
+    final directory = await getApplicationDocumentsDirectory();
+    final filepath = '${directory.path}/fish';
+    print(filepath);
+    final file = File(filepath);
+    final exists = await file.exists();
+    if (exists) {
+      await file.delete(recursive: true);
+    }
+    final data = await rootBundle.load('assets/exec/fish-macos');
+    // s.lengthInBytes;
+    print('cccc------${data.lengthInBytes}');
+    var audioUint8List =
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    List<int> audioListInt =
+        audioUint8List.map((eachUint8) => eachUint8.toInt()).toList();
+    await file.writeAsBytes(
+      audioListInt,
+      mode: FileMode.write,
+    );
+    Process.runSync('chmod', ['+x', filepath]);
+    // var process = await Process.start('assets/exec/fish-macos', []);
+    // print(process.pid);
+    // process.stderr.any((element) {
+    //   print('err --- $element');
+    //   return false;
+    // });
+    // process.stdout.any((element) {
+    //   String r = utf8.decode(element);
+    //   print('ot --- $r');
+    //   return false;
+    // });
+    // stdout.addStream(process.stdout);
+    // stderr.addStream(process.stderr);
+
     setState(() {});
   }
 
@@ -90,9 +127,37 @@ class _MyHomePageState extends State<MyHomePage> {
     var args =
         '-fb ${data["fb"]} -om ${data["om"]} -l ${data["l"]} -wow-ersion $wowVersion';
     if (splitList.isNotEmpty) {
-      final s = splitList.join('_');
+      final s = splitList.join(',');
       args += ' -split $s';
     }
+    var store = {};
+    data.forEach((key, value) {
+      if (key.indexOf('cycle_') != 0) {
+        return;
+      }
+      final arr = key.split('_');
+      if (store[arr[1]] == null) {
+        store[arr[1]] = {};
+      }
+      store[arr[1]][arr[2]] = value;
+    });
+    store.forEach((key, value) {
+      args += ' -cycle ${value["btn"]},${value["time"]},${value["cycle"]}';
+      for (var v in _cycleList) {
+        if ('${v.index}' != key) {
+          continue;
+        }
+        var checked = <String>[];
+        v.checkList.asMap().forEach((key, value) {
+          if (value) {
+            checked.add('${key + 1}');
+          }
+        });
+        if (checked.isNotEmpty) {
+          args += ',${checked.join("_")}';
+        }
+      }
+    });
     return args;
   }
 
@@ -190,9 +255,11 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ),
                 for (var item in _cycleList)
-                  wigetCycleButton(item, _formCtl, () => {}, (v) {
+                  wigetCycleButton(item, _formCtl, (i, v) {
+                    item.checkList[i] = v;
+                    setState(() {});
+                  }, (v) {
                     for (var item in v.keys) {
-                      print(item);
                       _formCtl.disposeKey(item);
                     }
                     _cycleList.remove(v);
@@ -270,7 +337,11 @@ class CycleData {
   List<String> keys = <String>[];
   List<bool> checkList = [false, false, false, false];
   CycleData(this.index) {
-    keys = ['sycle_${index}_btn', '${index}_cycle', '${index}_time'];
+    keys = [
+      'cycle_${index}_btn',
+      'cycle_${index}_time',
+      'cycle_${index}_cycle',
+    ];
   }
 }
 
@@ -281,8 +352,8 @@ class SplitData {
   SplitData(this.name, this.value, this.onChanged);
 }
 
-Widget wigetCycleButton(CycleData data, FormCtl ctl, Function onChange,
-    Function(CycleData) delete) {
+Widget wigetCycleButton(CycleData data, FormCtl ctl,
+    Function(int, bool) onChange, Function(CycleData) delete) {
   return Row(
     children: [
       Container(
@@ -339,32 +410,28 @@ Widget wigetCycleButton(CycleData data, FormCtl ctl, Function onChange,
       Checkbox(
           value: data.checkList[0],
           onChanged: (v) {
-            data.checkList[0] = v!;
-            onChange();
+            onChange(0, v!);
           }),
       const SizedBox(width: 5),
       const Text('2'),
       Checkbox(
           value: data.checkList[1],
           onChanged: (v) {
-            data.checkList[1] = v!;
-            onChange();
+            onChange(1, v!);
           }),
       const SizedBox(width: 5),
       const Text('3'),
       Checkbox(
           value: data.checkList[2],
           onChanged: (v) {
-            data.checkList[2] = v!;
-            onChange();
+            onChange(2, v!);
           }),
       const SizedBox(width: 5),
       const Text('4'),
       Checkbox(
           value: data.checkList[3],
           onChanged: (v) {
-            data.checkList[3] = v!;
-            onChange();
+            onChange(3, v!);
           }),
       const SizedBox(width: 5),
       TextButton(
